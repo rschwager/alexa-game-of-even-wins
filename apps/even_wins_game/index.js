@@ -5,14 +5,12 @@ var app = new alexa.app('even_wins_game');
 module.change_code = 1;
 module.exports = app;
 
-// Define an alexa-app
-app.launch(function(req, res) {
-  console.log("111");
-  res.say("Hello World!!");
-});
+function getNewChipAmount() {
+  return Math.round((13 * Math.random() + 9) / 2) * 2 + 1;;
+}
 
 function initializeGameState(session) {
-  var chips = Math.round((13 * Math.random() + 9) / 2) * 2 + 1;
+  var chips = getNewChipAmount();
 
   var historical = null;
   if (session && session.historical) 
@@ -24,11 +22,14 @@ function initializeGameState(session) {
       responses_0: [ 4, 4, 4, 4, 4, 4 ],
       responses_1: [ 4, 4, 4, 4, 4, 4 ],
       opponentsTotalOdd: 0,
-      piecesLeft: 0
+      piecesLeft: 0,
+      prevOpponentsTotalOdd: 0,
+      prevPiecesLeft: 0
     }
   }
   
   return {
+    startingChips: chips,
     chipsRemaining: chips,
     playerChipTotal: 0,
     alexaChipTotal: 0,
@@ -38,8 +39,8 @@ function initializeGameState(session) {
 
 function alexaMove(session, gameState) {
   var m;
-  var e1 = gameState.historical.opponentsTotalOdd;
-  var l1 = gameState.historical.piecesLeft;
+  gameState.historical.prevOpponentsTotalOdd = gameState.historical.opponentsTotalOdd;
+  gameState.historical.prevPiecesLeft = gameState.historical.piecesLeft;
   
   gameState.historical.opponentsTotalOdd = gameState.playerChipTotal % 2;
   gameState.historical.piecesLeft = gameState.chipsRemaining % 6;
@@ -68,9 +69,82 @@ function alexaMove(session, gameState) {
   
   return {
     move: m,
-    state: gameState.chipsRemaining <= 0 ? "alexaWins" : "ok",
+    state: gameState.chipsRemaining <= 0 ? "gameOver" : "ok",
     chipsRemaining: gameState.chipsRemaining
   };
+}
+
+function playerMove(chipsRequested, session, gameState) {
+  
+  gameState.historical.opponentsTotalOdd = gameState.chipsRemaining; 
+  gameState.chipsRemaining -= chipsRequested;
+  gameState.playerChipTotal += chipsRequested;    
+
+  // Update session
+  session.set("gameState", gameState);
+
+  return {
+    move: chipsRequested,
+    state: gameState.chipsRemaining <= 0 ? "gameOver" : "ok",
+    chipsRemaining: gameState.chipsRemaining
+  };
+}
+
+function newGame(session, gameState, res) {
+  // Reset game state
+  var chips = getNewChipAmount();
+  gameState.startingChips = chips;
+  gameState.chipsRemaining = chips;
+  gameState.playerChipTotal = 0;
+  gameState.alexaChipTotal = 0;
+  
+  var moveState = alexaMove(session, gameState);
+  
+  var chips = gameState.startingChips;
+  console.log(chips + " chips to start");
+
+	res.say("To start, there are " + chips + " chips on the board. " +
+          "I take " + moveState.move + " chips, leaving " + moveState.chipsRemaining + " chips. " +
+          "How many chips would you like to take?");
+
+  // Update session
+  session.set("gameState", gameState);
+}
+
+function isGameOver(session, gameState, response) {
+  if (gameState.chipsRemaining > 0)
+    return false; // game is still on.
+  else { // No chips remaining, let's determine who won, update stats and restart
+    if (gameState.alexaChipTotal % 2 == 0) { // alexa wins
+      response.say("Game Over. I win. Let's start a new game.");
+      gameState.historical.alexaWins++;
+
+    }
+    else { // player wins
+      response.say("Game Over. You win. Let's start a new game.");
+      gameState.historical.playerWins++;
+      updateStats(gameState);
+    }
+  }
+  
+  // Update session
+  session.set("gameState", gameState);
+  
+  newGame(session, gameState, response);
+  return true;
+}
+
+function updateStats(gameState) {
+  var responses = gameState.historical.opponentsTotalOdd ? gameState.historical.responses_1 :
+    gameState.historical.responses_0;
+  if (responses[gameState.historical.piecesLeft] > 1)
+    responses[gameState.historical.piecesLeft]--;
+  else {
+    responses = gameState.historical.prevOpponentsTotalOdd ? gameState.historical.responses_1 :
+      gameState.historical.responses_0;
+    if (responses[gameState.historical.prevPiecesLeft] > 1)
+      responses[gameState.historical.prevPiecesLeft]--;
+  }
 }
 
 app.launch(function(req,res) {
@@ -78,12 +152,12 @@ app.launch(function(req,res) {
   req.getSession().set("gameState", gameState);
   var moveState = alexaMove(req.getSession(), gameState);
   
-  var chips = gameState.chipsRemaining;
+  var chips = gameState.startingChips;
   console.log(chips + " chips to start");
 
 	res.say("Welcome to the game of Even Wins. To hear the rules, say help. To get the current game state, " +
-          "say status. To leave the game, say exit.  There are " + chips + " chips on the board. " +
-          "Alexa takes " + moveState.move + " chips, leaving " + moveState.chipsRemaining + " chips. " +
+          "say status. To leave the game, say exit.  To start, there are " + chips + " chips on the board. " +
+          "I take " + moveState.move + " chips, leaving " + moveState.chipsRemaining + " chips. " +
           "How many chips would you like to take? Say I take one, two, three or four chips.");
 	res.shouldEndSession (false, "To hear the rules, say help. To get the current game state, say status. To " +
                         "leave the game, say exit.");
@@ -98,10 +172,14 @@ app.intent('StatusIntent',
     },
     function (req, res) {
       var gameState = req.getSession().get("gameState");
+      if (!gameState)
+        console.log("We have no session. Something is wrong.");
+
 	    res.say("Current State. There are " + gameState.chipsRemaining + " chips remaining. " +
               "I have " + gameState.alexaChipTotal + " chips.  You have " + gameState.playerChipTotal + 
               " chips. I have won " + gameState.historical.alexaWins + " games. You have won " + 
-              gameState.historical.playerWins + " games.");  
+              gameState.historical.playerWins + " games."); 
+      res.shouldEndSession(false);
     }    
 );
 
@@ -116,59 +194,48 @@ app.intent('HelpIntent',
 	    response.say("The game is played as follows.  At the beginning of the game, a random number of chips " +
                    "are placed on the board. The number of chips always starts as an odd number. On each " +
                    "turn, a player must take one, two, three, or four chips. The winner is the player who " +
-                   "finishes with a total number of chips that is even. The computer starts out knowing only " +
-                   "the rules of the game. It gradually learns to play well. It should be difficult to beat the " +
-                   "computer after twenty games in a row. To get the current game state, say status. To " +
+                   "finishes with a total number of chips that is even. I start out knowing only " +
+                   "the rules of the game. I gradually learn to play well. It should be difficult to beat me " +
+                   "after twenty games in a row. To get the current game state, say status. To " +
                    "leave the game, say exit.");
-  
+      response.shouldEndSession(false);  
     }    
 );
 
-app.intent('AgeIntent', {
-  "slots": { "AGE": "NUMBER" },
-  "utterances": ["My age is {1-100|AGE}"]
+app.intent('MoveIntent', {
+  "slots": { "CHIPS": "NUMBER" },
+  "utterances": ["I take {1-4|CHIPS} chips", "I take {1-4|CHIPS}", "Take {1-4|CHIPS} chips", "Take {1-4|CHIPS}", "{1-4|CHIPS} CHIPS"]
 }, function(req, res) {
-  res.say('Your age is ' + req.slot('AGE'));
-});
+  var gameState = req.getSession().get("gameState");
+  if (!gameState)
+    console.log("We have no session. Something is wrong.");
 
-/*app.launch(function(request, response) {
-  response.say("App launched!");
-});
-*/
-
-app.intent("sampleIntent", {
-    "slots": { "NAME": "LITERAL", "AGE": "NUMBER" },
-    "utterances": ["my {name is|name's} {names|NAME} and {I am|I'm} {1-100|AGE}{ years old|}"]
-  },
-  function(request, response) {
-    setTimeout(function() {
-      response.say("After timeout!").say(" test ").reprompt("Reprompt");
-      response.send();
-    }, 1000);
-    // We are async!
-    return false;
+  res.shouldEndSession(false);
+  var chipsRequest = parseInt(req.slot('CHIPS'));
+  
+  // Make sure the request is valid.
+  if (chipsRequest > gameState.chipsRemaining) {
+    res.say("There are only " + gameState.chipsRemaining + " chips remaining.  You can't request more than that.");
+    return true;
   }
-);
-
-app.intent("errorIntent", function(request, response) {
-  //response.say(someVariableThatDoesntExist);
+  
+  // Player move.
+  var playerMoveState = playerMove(chipsRequest, req.getSession(), gameState);
+  if (!isGameOver(req.getSession(), gameState, res)) {
+    res.say("After your move of " + playerMoveState.move + ", there are " + 
+           playerMoveState.chipsRemaining + " chips left.");
+    var alexaMoveState = alexaMove(req.getSession(), gameState);
+    // Is game over?
+    if (gameState.chipsRemaining <= 0) {
+      res.say("I take " + alexaMoveState.move + " chips.");
+      isGameOver(req.getSession(), gameState, res); // We know it is over but it does contain logic in it
+    }
+    else {
+      res.say("I take " + alexaMoveState.move + " chips, leaving " + alexaMoveState.chipsRemaining + " chips. " +
+          "How many chips would you like to take?");
+    }
+  }  
 });
-
-// output the schema
-//console.log("\n\nSCHEMA:\n\n" + app.schema() + "\n\n");
-// output sample utterances
-//console.log("\n\nUTTERANCES:\n\n" + app.utterances() + "\n\n");
-
-// test pre() and post() functions
-/*app.pre = function(request, response, type) {
-  response.say("This part of the output is from pre(). ");
-};
-app.post = function(request, response, type, exception) {
-  if (exception) {
-    response.clear().say("An error occured: " + exception).send();
-  }
-};*/
-
 
 // error handler example
 app.error = function(e, request, response) {
