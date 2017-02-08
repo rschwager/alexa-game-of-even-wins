@@ -172,8 +172,11 @@ app.intent('StatusIntent',
     },
     function (req, res) {
       var gameState = req.getSession().get("gameState");
-      if (!gameState)
+      if (!gameState) {
         console.log("We have no session. Something is wrong.");
+        gameState = initializeGameState(req.getSession());
+        req.getSession().set("gameState", gameState);
+      }
 
 	    res.say("Current State. There are " + gameState.chipsRemaining + " chips remaining. " +
               "I have " + gameState.alexaChipTotal + " chips.  You have " + gameState.playerChipTotal + 
@@ -235,6 +238,20 @@ app.intent('MoveIntent', {
           "How many chips would you like to take?");
     }
   }  
+});
+
+app.sessionEnded(function(request, response) {
+  var gameState = request.getSession().get("gameState");
+  var alexaWins = 0;
+  var playerWins = 0;
+
+  if (gameState) {
+    alexaWins = gameState.historical.alexaWins;
+    playerWins = gameState.historical.playerWins;
+  }
+
+  response.say("Thanks for playing.  You won " + playerWins + " games and I won " + alexaWins + " games.");
+  response.shouldEndSession(true);  
 });
 
 // error handler example
