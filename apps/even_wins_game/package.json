@@ -1,0 +1,14 @@
+{
+  "name": "even_wins_game",
+  "version": "1.0.0",
+  "description": "The Game of Even Wins Skill for Alexa",
+  "main": "index.js",
+  "author": "Russell Schwager",
+  "license": "",
+  "alexa": {
+    "applicationId": "amzn1.ask.skill.697aff41-5e71-4363-a9b7-244afcda6417"
+  },
+  "dependencies": {
+    "alexa-app": "^2.3.4"
+  }
+}
