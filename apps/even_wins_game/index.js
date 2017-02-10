@@ -181,7 +181,7 @@ app.intent('StatusIntent',
 	    res.say("Current State. There are " + gameState.chipsRemaining + " chips remaining. " +
               "I have " + gameState.alexaChipTotal + " chips.  You have " + gameState.playerChipTotal + 
               " chips. I have won " + gameState.historical.alexaWins + " games. You have won " + 
-              gameState.historical.playerWins + " games."); 
+              gameState.historical.playerWins + " games. How many chips would you like to take?"); 
       res.shouldEndSession(false);
     }    
 );
@@ -200,7 +200,7 @@ app.intent('HelpIntent',
                    "finishes with a total number of chips that is even. I start out knowing only " +
                    "the rules of the game. I gradually learn to play well. It should be difficult to beat me " +
                    "after twenty games in a row. To get the current game state, say status. To " +
-                   "leave the game, say exit.");
+                   "leave the game, say exit. How many chips would you like to take?");
       response.shouldEndSession(false);  
     }    
 );
