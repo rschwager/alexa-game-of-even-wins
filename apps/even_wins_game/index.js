@@ -240,7 +240,11 @@ app.intent('MoveIntent', {
   }  
 });
 
-app.sessionEnded(function(request, response) {
+app.intent('AMAZON.StopIntent', stopSession);
+app.intent('AMAZON.CancelIntent', stopSession);
+app.sessionEnded(stopSession);
+
+function stopSession(request, response) {
   var gameState = request.getSession().get("gameState");
   var alexaWins = 0;
   var playerWins = 0;
@@ -252,7 +256,8 @@ app.sessionEnded(function(request, response) {
 
   response.say("Thanks for playing.  You won " + playerWins + " games and I won " + alexaWins + " games.");
   response.shouldEndSession(true);  
-});
+}
+
 
 // error handler example
 app.error = function(e, request, response) {
